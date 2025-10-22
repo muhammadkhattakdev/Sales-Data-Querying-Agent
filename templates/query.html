@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Query Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2rem;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 0.95rem;
+        }
+
+        .query-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        #questionInput {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+            outline: none;
+        }
+
+        #questionInput:focus {
+            border-color: #667eea;
+        }
+
+        #sendBtn {
+            padding: 15px 35px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        #sendBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        #sendBtn:active {
+            transform: translateY(0);
+        }
+
+        #sendBtn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .response-container {
+            display: none;
+            animation: fadeIn 0.5s;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .answer-box {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+
+        .answer-box h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .answer-text {
+            color: #333;
+            font-size: 1.1rem;
+            line-height: 1.6;
+        }
+
+        .sql-box {
+            background: #2d3748;
+            padding: 15px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+
+        .sql-box h4 {
+            color: #a0aec0;
+            font-size: 0.85rem;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .sql-query {
+            color: #68d391;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            word-break: break-all;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+            margin-top: 20px;
+        }
+
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 12px;
+            margin-top: 20px;
+            display: none;
+            border-left: 4px solid #c33;
+        }
+
+        .examples {
+            background: #f0f4ff;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 30px;
+        }
+
+        .examples h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1rem;
+        }
+
+        .example-item {
+            color: #555;
+            padding: 8px 0;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .example-item:hover {
+            color: #667eea;
+        }
+
+        .example-item::before {
+            content: "💡 ";
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Sales Query Assistant</h1>
+        <p class="subtitle">Ask me anything about your sales data in natural language!</p>
+
+        <div class="query-box">
+            <input 
+                type="text" 
+                id="questionInput" 
+                placeholder="e.g., How much profit did product ABC make this month?"
+                autocomplete="off"
+            >
+            <button id="sendBtn">Send</button>
+        </div>
+
+        <div class="loading">
+            <div class="loading-spinner"></div>
+            <p>Analyzing your question...</p>
+        </div>
+
+        <div class="error" id="errorBox"></div>
+
+        <div class="response-container" id="responseContainer">
+            <div class="answer-box">
+                <h3>📊 Answer</h3>
+                <div class="answer-text" id="answerText"></div>
+            </div>
+
+            <div class="sql-box">
+                <h4>⚡ Generated SQL Query</h4>
+                <div class="sql-query" id="sqlQuery"></div>
+            </div>
+        </div>
+
+        <div class="examples">
+            <h3>Try these example questions:</h3>
+            <div class="example-item" onclick="fillQuestion(this)">How much profit did product ABC make this month?</div>
+            <div class="example-item" onclick="fillQuestion(this)">What are the total sales for all products?</div>
+            <div class="example-item" onclick="fillQuestion(this)">Which product generated the most profit?</div>
+            <div class="example-item" onclick="fillQuestion(this)">How many sales did we make today?</div>
+        </div>
+    </div>
+
+    <script>
+        const questionInput = document.getElementById('questionInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const loading = document.querySelector('.loading');
+        const responseContainer = document.getElementById('responseContainer');
+        const answerText = document.getElementById('answerText');
+        const sqlQuery = document.getElementById('sqlQuery');
+        const errorBox = document.getElementById('errorBox');
+
+        function fillQuestion(element) {
+            questionInput.value = element.textContent;
+            questionInput.focus();
+        }
+
+        async function sendQuery() {
+            const question = questionInput.value.trim();
+            
+            if (!question) {
+                alert('Please enter a question!');
+                return;
+            }
+
+            // Reset UI
+            responseContainer.style.display = 'none';
+            errorBox.style.display = 'none';
+            loading.style.display = 'block';
+            sendBtn.disabled = true;
+
+            try {
+                const response = await fetch('/process/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ question })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    answerText.textContent = data.answer;
+                    sqlQuery.textContent = data.sql_query;
+                    responseContainer.style.display = 'block';
+                } else {
+                    errorBox.textContent = '❌ ' + (data.error || 'An error occurred');
+                    errorBox.style.display = 'block';
+                }
+            } catch (error) {
+                errorBox.textContent = '❌ Network error: ' + error.message;
+                errorBox.style.display = 'block';
+            } finally {
+                loading.style.display = 'none';
+                sendBtn.disabled = false;
+            }
+        }
+
+        sendBtn.addEventListener('click', sendQuery);
+        
+        questionInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendQuery();
+            }
+        });
+    </script>
+</body>
+</html>

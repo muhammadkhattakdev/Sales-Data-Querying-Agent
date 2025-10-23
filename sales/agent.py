@@ -1,9 +1,8 @@
 import os
 import sqlite3
-from typing import TypedDict, Annotated
+from typing import TypedDict
 from langgraph.graph import StateGraph, END
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
+import google.generativeai as genai
 from django.conf import settings
 
 class AgentState(TypedDict):
@@ -13,18 +12,23 @@ class AgentState(TypedDict):
     final_answer: str
     error: str
 
-# Initialize the LLM
-def get_llm():
-    return ChatGoogleGenerativeAI(
-        model="gemini-pro",
-        google_api_key=os.environ.get("GOOGLE_API_KEY"),
-        temperature=0
+# Initialize the Gemini model
+def get_model():
+    genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+    return genai.GenerativeModel(
+        model_name="gemini-2.0-flash-exp",
+        generation_config={
+            "temperature": 0,
+            "top_p": 1,
+            "top_k": 1,
+            "max_output_tokens": 2048,
+        }
     )
 
 # Node 1: Generate SQL Query
 def generate_sql(state: AgentState) -> AgentState:
     """Generate SQL query from natural language question"""
-    llm = get_llm()
+    model = get_model()
     
     schema_info = """
     Table: sales_sale
@@ -38,39 +42,37 @@ def generate_sql(state: AgentState) -> AgentState:
     Note: Profit = price_sold - price_purchased
     """
     
-    prompt = ChatPromptTemplate.from_messages([
-        (
-            "system", """You are a SQL expert. Generate a SQLite query based on the user's question.
-        
-                Database Schema:
-                {schema}
+    system_instruction = """You are a SQL expert. Generate a SQLite query based on the user's question.
 
-                Rules:
-                1. Return ONLY the SQL query, nothing else
-                2. Use proper SQLite syntax
-                3. For date filtering, use date() function
-                4. For "this month", use: WHERE strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
-                5. For profit calculations, use: (price_sold - price_purchased)
-                6. Always use proper column names as shown in schema
-                7. Do not use markdown formatting or code blocks
+Rules:
+1. Return ONLY the SQL query, nothing else
+2. Use proper SQLite syntax
+3. For date filtering, use date() function
+4. For "this month", use: WHERE strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
+5. For profit calculations, use: (price_sold - price_purchased)
+6. Always use proper column names as shown in schema
+7. Do not use markdown formatting or code blocks
 
-                Examples:
-                Question: "How much profit did product ABC make this month?"
-                Query: SELECT SUM(price_sold - price_purchased) as total_profit FROM sales_sale WHERE product_name = 'ABC' AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
+Examples:
+Question: "How much profit did product ABC make this month?"
+Query: SELECT SUM(price_sold - price_purchased) as total_profit FROM sales_sale WHERE product_name = 'ABC' AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
 
-                Question: "What are total sales for product XYZ?"
-                Query: SELECT COUNT(*) as total_sales, SUM(price_sold) as total_revenue FROM sales_sale WHERE product_name = 'XYZ' """), 
-                ("human", "{question}")
-    ])
+Question: "What are total sales for product XYZ?"
+Query: SELECT COUNT(*) as total_sales, SUM(price_sold) as total_revenue FROM sales_sale WHERE product_name = 'XYZ'"""
+    
+    prompt = f"""{system_instruction}
+
+Database Schema:
+{schema_info}
+
+User Question: {state["question"]}
+
+Generate SQL query:"""
     
     try:
-        chain = prompt | llm
-        response = chain.invoke({
-            "schema": schema_info,
-            "question": state["question"]
-        })
+        response = model.generate_content(prompt)
         
-        sql_query = response.content.strip()
+        sql_query = response.text.strip()
         # Clean up any markdown formatting
         sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
 
@@ -120,29 +122,25 @@ def generate_response(state: AgentState) -> AgentState:
         state["final_answer"] = f"I encountered an error: {state['error']}"
         return state
     
-    llm = get_llm()
+    model = get_model()
     
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are a helpful assistant that explains database query results in natural language.
+    system_instruction = """You are a helpful assistant that explains database query results in natural language.
 
-            Given the user's question and the query results, provide a clear, concise answer.
-            Format numbers nicely (e.g., currency with $ and 2 decimal places).
-            If no results were found, say so politely."""),
-                    ("human", """Question: {question}
+Given the user's question and the query results, provide a clear, concise answer.
+Format numbers nicely (e.g., currency with $ and 2 decimal places).
+If no results were found, say so politely."""
+    
+    prompt = f"""{system_instruction}
 
-            Query Results: {results}
-                     
-            Provide a natural language answer:""")
-    ])
+Question: {state["question"]}
+
+Query Results: {state["query_result"]}
+
+Provide a natural language answer:"""
 
     try:
-        chain = prompt | llm
-        response = chain.invoke({
-            "question": state["question"],
-            "results": state["query_result"]
-        })
-        
-        state["final_answer"] = response.content.strip()
+        response = model.generate_content(prompt)
+        state["final_answer"] = response.text.strip()
     except Exception as e:
         state["final_answer"] = f"Error generating response: {str(e)}"
     
